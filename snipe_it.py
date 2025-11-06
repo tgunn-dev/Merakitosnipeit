@@ -233,7 +233,7 @@ def post_hardware_to_snipe_it(hardware_data, max_retries=3):
         max_retries (int): Maximum number of retry attempts for rate limiting.
 
     Returns:
-        dict: A dictionary with "success" boolean and either "data" or "error" key.
+        dict: A dictionary with "success" boolean, "action" (created/updated), and either "data" or "error" key.
     """
     headers = _get_headers()
 
@@ -269,17 +269,19 @@ def post_hardware_to_snipe_it(hardware_data, max_retries=3):
                     return {
                         "success": False,
                         "status_code": 429,
+                        "action": "update",
                         "error": f"Rate limit exceeded after {max_retries} retries"
                     }
 
             if response.status_code in [200, 201]:
                 logger.debug(f"Asset updated successfully")
-                return {"success": True, "data": response.json()}
+                return {"success": True, "action": "update", "data": response.json()}
             else:
                 logger.error(f"Failed to update asset: {response.status_code}")
                 return {
                     "success": False,
                     "status_code": response.status_code,
+                    "action": "update",
                     "error": response.text
                 }
 
@@ -305,17 +307,19 @@ def post_hardware_to_snipe_it(hardware_data, max_retries=3):
                     return {
                         "success": False,
                         "status_code": 429,
+                        "action": "create",
                         "error": f"Rate limit exceeded after {max_retries} retries"
                     }
 
             if response.status_code in [200, 201]:
                 logger.debug(f"Asset created successfully")
-                return {"success": True, "data": response.json()}
+                return {"success": True, "action": "create", "data": response.json()}
             else:
                 logger.error(f"Failed to create asset: {response.status_code}")
                 return {
                     "success": False,
                     "status_code": response.status_code,
+                    "action": "create",
                     "error": response.text
                 }
 

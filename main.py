@@ -151,15 +151,17 @@ if __name__ == '__main__':
 
                     if response["success"]:
                         stats.successful += 1
-                        # Determine if it was an update or create
-                        if "payload" in response.get("data", {}):
-                            if snipe_it.find_asset_by_tag_or_serial(
-                                asset_tag=snipeit_data.get("asset_tag"),
-                                serial=snipeit_data.get("serial")
-                            ):
-                                stats.updated += 1
-                            else:
-                                stats.created += 1
+                        action = response.get("action", "unknown")
+
+                        # Track API calls: 1 search + 1 update/create
+                        stats.api_calls["snipe_it_searches"] += 1
+                        if action == "update":
+                            stats.updated += 1
+                            stats.api_calls["snipe_it_updates"] += 1
+                        elif action == "create":
+                            stats.created += 1
+                            stats.api_calls["snipe_it_creates"] += 1
+
                         logger.debug(f"✓ Successfully synced device: {device_name}")
                     else:
                         stats.failed += 1
