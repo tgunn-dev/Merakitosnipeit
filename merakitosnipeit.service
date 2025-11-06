@@ -1,0 +1,17 @@
+[Unit]
+Description=Meraki to Snipe-IT Sync Service
+After=network.target
+
+[Service]
+Type=simple
+User=syncer
+WorkingDirectory=/opt/merakitosnipeit
+EnvironmentFile=/opt/merakitosnipeit/.env
+ExecStart=/usr/bin/python3 /opt/merakitosnipeit/scheduler.py --interval 60
+Restart=on-failure
+RestartSec=30
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target

@@ -1,7 +1,10 @@
 import os
+import logging
 import requests
 import time
 from dotenv import load_dotenv
+
+logger = logging.getLogger(__name__)
 
 # Load environment variables from .env file
 load_dotenv()
@@ -14,6 +17,10 @@ SNIPE_IT_API_KEY = os.getenv("SNIPE_IT_API_KEY")
 if not SNIPE_IT_URL or not SNIPE_IT_API_KEY:
     raise ValueError("SNIPE_IT_URL and SNIPE_IT_API_KEY environment variables must be set")
 
+# Global caches to minimize API calls
+_entity_cache = {}  # Cache for models, categories, etc.
+_cache_initialized = False
+
 
 def _get_headers():
     """Helper function to create API headers with authentication. Used to avoid code duplication."""
@@ -22,6 +29,51 @@ def _get_headers():
         "Authorization": f"Bearer {SNIPE_IT_API_KEY}",
         "Content-Type": "application/json"
     }
+
+
+def _initialize_cache():
+    """
+    Pre-loads all categories and models into memory to minimize API calls.
+    This is called once at startup before processing any devices.
+    """
+    global _entity_cache, _cache_initialized
+
+    if _cache_initialized:
+        return
+
+    headers = _get_headers()
+    logger.info("Initializing entity cache...")
+
+    try:
+        # Cache all categories
+        logger.debug("Loading categories into cache...")
+        response = requests.get(
+            f"{SNIPE_IT_URL}/api/v1/categories?limit=500",
+            headers=headers
+        )
+        if response.status_code == 200:
+            for item in response.json().get("rows", []):
+                cache_key = f"categories:{item['name']}"
+                _entity_cache[cache_key] = item["id"]
+            logger.debug(f"Cached {len([k for k in _entity_cache.keys() if k.startswith('categories:')])} categories")
+
+        # Cache all models
+        logger.debug("Loading models into cache...")
+        response = requests.get(
+            f"{SNIPE_IT_URL}/api/v1/models?limit=500",
+            headers=headers
+        )
+        if response.status_code == 200:
+            for item in response.json().get("rows", []):
+                cache_key = f"models:{item['name']}"
+                _entity_cache[cache_key] = item["id"]
+            logger.debug(f"Cached {len([k for k in _entity_cache.keys() if k.startswith('models:')])} models")
+
+        _cache_initialized = True
+        logger.info("Entity cache initialized successfully")
+    except Exception as e:
+        logger.warning(f"Failed to initialize cache: {str(e)}. Will fall back to per-request lookups.")
+        _cache_initialized = True
 
 
 def find_asset_by_tag_or_serial(asset_tag=None, serial=None, max_retries=3):
@@ -47,6 +99,7 @@ def find_asset_by_tag_or_serial(asset_tag=None, serial=None, max_retries=3):
 
     # Search for asset by each field
     for field_name, value in search_fields:
+        logger.debug(f"Searching for asset by {field_name}: {value}")
         for attempt in range(max_retries):
             response = requests.get(
                 f"{SNIPE_IT_URL}/api/v1/hardware",
@@ -58,7 +111,7 @@ def find_asset_by_tag_or_serial(asset_tag=None, serial=None, max_retries=3):
             if response.status_code == 429:
                 retry_after = int(response.headers.get("Retry-After", 10))
                 if attempt < max_retries - 1:
-                    print(f"Rate limit hit. Retrying after {retry_after} seconds...")
+                    logger.warning(f"Rate limit hit. Retrying after {retry_after} seconds...")
                     time.sleep(retry_after)
                     continue
                 else:
@@ -68,6 +121,7 @@ def find_asset_by_tag_or_serial(asset_tag=None, serial=None, max_retries=3):
             if response.status_code == 200:
                 for item in response.json().get("rows", []):
                     if item.get(field_name) == value:
+                        logger.debug(f"Found existing asset with ID: {item['id']}")
                         return item["id"]
                 break  # Found results but no match, don't retry
             else:
@@ -79,6 +133,7 @@ def find_asset_by_tag_or_serial(asset_tag=None, serial=None, max_retries=3):
 def get_or_create_entity(entity_type, name, additional_fields=None, max_retries=3):
     """
     Gets or creates an entity by name from Snipe-IT. This function is idempotent.
+    Uses cache first to minimize API calls.
 
     Args:
         entity_type (str): The type of entity (e.g., "models", "categories", "statuses").
@@ -95,8 +150,14 @@ def get_or_create_entity(entity_type, name, additional_fields=None, max_retries=
     headers = _get_headers()
     entity_singular = entity_type.rstrip('s')  # Convert plural to singular form
 
+    # Check cache first
+    cache_key = f"{entity_type}:{name}"
+    if cache_key in _entity_cache:
+        logger.debug(f"Found {entity_singular} '{name}' in cache with ID: {_entity_cache[cache_key]}")
+        return _entity_cache[cache_key]
+
+    logger.debug(f"Searching for {entity_singular} with name: {name}")
     # Search for the entity by name
-    print(f"Searching for {entity_type} with name: {name}")
     for attempt in range(max_retries):
         response = requests.get(
             f"{SNIPE_IT_URL}/api/v1/{entity_type}",
@@ -108,7 +169,7 @@ def get_or_create_entity(entity_type, name, additional_fields=None, max_retries=
         if response.status_code == 429:
             retry_after = int(response.headers.get("Retry-After", 10))
             if attempt < max_retries - 1:
-                print(f"Rate limit hit on search. Retrying after {retry_after} seconds...")
+                logger.warning(f"Rate limit hit on search. Retrying after {retry_after} seconds...")
                 time.sleep(retry_after)
                 continue
             else:
@@ -120,7 +181,8 @@ def get_or_create_entity(entity_type, name, additional_fields=None, max_retries=
             for result in results:
                 if result.get("name") == name:
                     entity_id = result.get("id")
-                    print(f"Found {entity_singular} with ID: {entity_id}")
+                    _entity_cache[cache_key] = entity_id
+                    logger.debug(f"Found {entity_singular} with ID: {entity_id}")
                     return entity_id
             # Entity not found - proceed to creation
             break
@@ -132,7 +194,7 @@ def get_or_create_entity(entity_type, name, additional_fields=None, max_retries=
     if additional_fields:
         payload.update(additional_fields)
 
-    print(f"Creating new {entity_singular} with name: {name}")
+    logger.info(f"Creating new {entity_singular} with name: {name}")
     for attempt in range(max_retries):
         post_response = requests.post(
             f"{SNIPE_IT_URL}/api/v1/{entity_type}",
@@ -144,18 +206,17 @@ def get_or_create_entity(entity_type, name, additional_fields=None, max_retries=
         if post_response.status_code == 429:
             retry_after = int(post_response.headers.get("Retry-After", 10))
             if attempt < max_retries - 1:
-                print(f"Rate limit hit on create. Retrying after {retry_after} seconds...")
+                logger.warning(f"Rate limit hit on create. Retrying after {retry_after} seconds...")
                 time.sleep(retry_after)
                 continue
             else:
                 raise Exception(f"Rate limit exceeded after {max_retries} retries during creation")
 
-        print(f"Create Response Status Code: {post_response.status_code}")
-
         # Success on creation
         if post_response.status_code in [200, 201]:
             entity_id = post_response.json()["payload"]["id"]
-            print(f"Successfully created {entity_singular} with ID: {entity_id}")
+            _entity_cache[cache_key] = entity_id
+            logger.info(f"Successfully created {entity_singular} with ID: {entity_id}")
             return entity_id
         else:
             raise Exception(f"Failed to create {entity_singular} '{name}': {post_response.status_code} - {post_response.text}")
@@ -187,7 +248,7 @@ def post_hardware_to_snipe_it(hardware_data, max_retries=3):
 
     if asset_id:
         # Asset exists - update it via PUT request
-        print(f"Asset already exists. Updating asset ID: {asset_id}")
+        logger.info(f"Updating existing asset ID: {asset_id}")
         endpoint = f"{SNIPE_IT_URL}/api/v1/hardware/{asset_id}"
 
         # Remove fields that cannot be updated or are not applicable for PUT
@@ -201,7 +262,7 @@ def post_hardware_to_snipe_it(hardware_data, max_retries=3):
             if response.status_code == 429:
                 retry_after = int(response.headers.get("Retry-After", 10))
                 if attempt < max_retries - 1:
-                    print(f"Rate limit hit. Retrying after {retry_after} seconds...")
+                    logger.warning(f"Rate limit hit. Retrying after {retry_after} seconds...")
                     time.sleep(retry_after)
                     continue
                 else:
@@ -211,11 +272,11 @@ def post_hardware_to_snipe_it(hardware_data, max_retries=3):
                         "error": f"Rate limit exceeded after {max_retries} retries"
                     }
 
-            print(f"Update Response Status Code: {response.status_code}")
-
             if response.status_code in [200, 201]:
+                logger.debug(f"Asset updated successfully")
                 return {"success": True, "data": response.json()}
             else:
+                logger.error(f"Failed to update asset: {response.status_code}")
                 return {
                     "success": False,
                     "status_code": response.status_code,
@@ -224,7 +285,7 @@ def post_hardware_to_snipe_it(hardware_data, max_retries=3):
 
     else:
         # Asset does not exist - create it via POST request
-        print(f"Creating new asset.")
+        logger.info(f"Creating new asset: {hardware_data.get('name')}")
 
         # Attempt creation with retry logic
         for attempt in range(max_retries):
@@ -237,7 +298,7 @@ def post_hardware_to_snipe_it(hardware_data, max_retries=3):
             if response.status_code == 429:
                 retry_after = int(response.headers.get("Retry-After", 10))
                 if attempt < max_retries - 1:
-                    print(f"Rate limit hit. Retrying after {retry_after} seconds...")
+                    logger.warning(f"Rate limit hit. Retrying after {retry_after} seconds...")
                     time.sleep(retry_after)
                     continue
                 else:
@@ -247,11 +308,11 @@ def post_hardware_to_snipe_it(hardware_data, max_retries=3):
                         "error": f"Rate limit exceeded after {max_retries} retries"
                     }
 
-            print(f"Create Response Status Code: {response.status_code}")
-
             if response.status_code in [200, 201]:
+                logger.debug(f"Asset created successfully")
                 return {"success": True, "data": response.json()}
             else:
+                logger.error(f"Failed to create asset: {response.status_code}")
                 return {
                     "success": False,
                     "status_code": response.status_code,
