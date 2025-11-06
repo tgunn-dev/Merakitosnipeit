@@ -91,27 +91,50 @@ if [ ! -d "$VENV_DIR" ]; then
     fi
 fi
 
-# Activate virtual environment
-echo "Activating virtual environment..."
-source "$VENV_DIR/bin/activate"
-if [ $? -eq 0 ]; then
-    echo -e "${GREEN}✓ Virtual environment activated${NC}\n"
+# For production with sudo, use venv python directly
+if [ -n "$USE_SUDO" ]; then
+    PYTHON_BIN="$VENV_DIR/bin/python3"
+    PIP_BIN="$VENV_DIR/bin/pip"
 else
-    echo -e "${RED}Error: Failed to activate virtual environment${NC}"
-    exit 1
+    # Activate virtual environment for development
+    echo "Activating virtual environment..."
+    source "$VENV_DIR/bin/activate"
+    if [ $? -eq 0 ]; then
+        echo -e "${GREEN}✓ Virtual environment activated${NC}\n"
+    else
+        echo -e "${RED}Error: Failed to activate virtual environment${NC}"
+        exit 1
+    fi
+    PYTHON_BIN="python3"
+    PIP_BIN="pip"
 fi
 
 # Upgrade pip
 echo "Upgrading pip..."
-pip install --upgrade pip setuptools wheel > /dev/null 2>&1
+if [ -n "$USE_SUDO" ]; then
+    $USE_SUDO $PIP_BIN install --upgrade pip setuptools wheel > /dev/null 2>&1
+else
+    $PIP_BIN install --upgrade pip setuptools wheel > /dev/null 2>&1
+fi
 
 # Install dependencies
 echo "Installing dependencies..."
-if pip install -r requirements.txt > /dev/null 2>&1; then
-    echo -e "${GREEN}✓ Dependencies installed${NC}\n"
+if [ -n "$USE_SUDO" ]; then
+    if $USE_SUDO $PIP_BIN install -r requirements.txt > /dev/null 2>&1; then
+        echo -e "${GREEN}✓ Dependencies installed${NC}\n"
+    else
+        echo -e "${RED}Error: Failed to install dependencies${NC}"
+        echo "Try running manually:"
+        echo -e "  ${YELLOW}sudo $PIP_BIN install -r requirements.txt${NC}"
+        exit 1
+    fi
 else
-    echo -e "${RED}Error: Failed to install dependencies${NC}"
-    exit 1
+    if $PIP_BIN install -r requirements.txt > /dev/null 2>&1; then
+        echo -e "${GREEN}✓ Dependencies installed${NC}\n"
+    else
+        echo -e "${RED}Error: Failed to install dependencies${NC}"
+        exit 1
+    fi
 fi
 
 # For production, setup .env and fix permissions
