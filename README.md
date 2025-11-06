@@ -158,13 +158,37 @@ See `.env.example` for a template.
 
 ## Installation
 
+### Quick Start (Recommended)
+
+We provide automated setup scripts to handle virtual environment creation and dependency installation:
+
+**Option A: Using the setup script** (macOS/Linux/Git Bash)
 ```bash
+./setup.sh
+```
+
+**Option B: Using Make** (if you have `make` installed)
+```bash
+make setup
+make run
+```
+
+**Option C: Manual setup** (for advanced users)
+```bash
+# Create virtual environment
+python3 -m venv venv
+source venv/bin/activate  # On Windows: venv\Scripts\activate
+
 # Install dependencies
 pip install -r requirements.txt
 
 # Run once to test
 python main.py
 ```
+
+### Next Steps
+
+After installation, ensure your `.env` file is configured with your API credentials (see [Configuration](#configuration) above), then proceed to [Usage](#usage).
 
 ## Usage
 
