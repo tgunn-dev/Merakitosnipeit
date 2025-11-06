@@ -56,6 +56,16 @@ if [ "$SETUP_TYPE" == "production" ]; then
         fi
     fi
 
+    # Copy project files to deployment directory if not already there
+    if [ ! -f "$BASE_DIR/main.py" ]; then
+        echo "Copying project files to $BASE_DIR..."
+        SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
+        sudo cp -r "$SCRIPT_DIR"/* "$BASE_DIR/" 2>/dev/null || true
+        sudo cp -r "$SCRIPT_DIR"/.env.example "$BASE_DIR/" 2>/dev/null || true
+        sudo cp -r "$SCRIPT_DIR"/.gitignore "$BASE_DIR/" 2>/dev/null || true
+        echo -e "${GREEN}✓ Project files copied${NC}\n"
+    fi
+
     # Check if we need sudo for venv creation
     if [ ! -w "$BASE_DIR" ]; then
         echo -e "${YELLOW}Note: Using sudo for venv creation (requires sudo access)${NC}\n"
@@ -119,17 +129,22 @@ fi
 
 # Install dependencies
 echo "Installing dependencies..."
+REQUIREMENTS_FILE="$BASE_DIR/requirements.txt"
+if [ ! -f "$REQUIREMENTS_FILE" ]; then
+    REQUIREMENTS_FILE="requirements.txt"
+fi
+
 if [ -n "$USE_SUDO" ]; then
-    if $USE_SUDO $PIP_BIN install -r requirements.txt > /dev/null 2>&1; then
+    if $USE_SUDO $PIP_BIN install -r "$REQUIREMENTS_FILE" > /dev/null 2>&1; then
         echo -e "${GREEN}✓ Dependencies installed${NC}\n"
     else
         echo -e "${RED}Error: Failed to install dependencies${NC}"
         echo "Try running manually:"
-        echo -e "  ${YELLOW}sudo $PIP_BIN install -r requirements.txt${NC}"
+        echo -e "  ${YELLOW}sudo $PIP_BIN install -r $REQUIREMENTS_FILE${NC}"
         exit 1
     fi
 else
-    if $PIP_BIN install -r requirements.txt > /dev/null 2>&1; then
+    if $PIP_BIN install -r "$REQUIREMENTS_FILE" > /dev/null 2>&1; then
         echo -e "${GREEN}✓ Dependencies installed${NC}\n"
     else
         echo -e "${RED}Error: Failed to install dependencies${NC}"
