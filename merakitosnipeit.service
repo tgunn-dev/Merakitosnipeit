@@ -7,7 +7,7 @@ Type=oneshot
 User=syncer
 WorkingDirectory=/opt/merakitosnipeit
 EnvironmentFile=/opt/merakitosnipeit/.env
-ExecStart=/usr/bin/python3 /opt/merakitosnipeit/main.py
+ExecStart=/opt/merakitosnipeit/venv/bin/python3 /opt/merakitosnipeit/main.py
 StandardOutput=journal
 StandardError=journal
 
