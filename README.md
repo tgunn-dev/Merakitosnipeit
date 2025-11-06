@@ -180,14 +180,28 @@ The script will ask you to choose a setup mode:
 
 #### Mode 2: Production (Systemd/Server Deployment)
 - Creates virtual environment in `/opt/merakitosnipeit/venv` (or custom path)
-- Automatically sets up systemd service for daily execution
+- Copies all project files to deployment directory
+- Creates `syncer` system user automatically
+- Installs systemd service and timer for daily execution at **2:00 AM**
 - Survives server reboots
 - Handles sudo access automatically
-- **Next steps after setup:**
+- **Setup automatically:**
+  - ✓ Copies project files from repo to deployment directory
+  - ✓ Creates syncer system user for secure execution
+  - ✓ Creates and configures systemd files
+  - ✓ Sets proper permissions
+
+- **Final step after setup:**
   ```bash
   sudo systemctl daemon-reload
   sudo systemctl enable merakitosnipeit.timer
   sudo systemctl start merakitosnipeit.timer
+  ```
+
+- **Verify it's running:**
+  ```bash
+  sudo systemctl list-timers merakitosnipeit.timer
+  sudo journalctl -u merakitosnipeit.service -n 20
   ```
 
 ### Alternative Installation Methods

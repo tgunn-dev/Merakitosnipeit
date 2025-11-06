@@ -15,12 +15,35 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Essential Commands
 
+### Setup (Automated)
 ```bash
-# Install dependencies
+# Interactive setup script (asks for development or production mode)
+./setup.sh
+
+# Development mode: creates ./venv, run manually or with APScheduler
+source venv/bin/activate
+python main.py
+
+# Production mode: copies files, creates syncer user, installs systemd
+# (run ./setup.sh and choose option 2)
+sudo systemctl daemon-reload
+sudo systemctl enable merakitosnipeit.timer
+sudo systemctl start merakitosnipeit.timer
+```
+
+### Manual Commands
+```bash
+# Install dependencies (requires venv already created)
 pip install -r requirements.txt
 
-# Run sync locally
+# Run sync once
 python main.py
+
+# View production sync logs
+sudo journalctl -u merakitosnipeit.service -n 20
+
+# Check scheduled execution time
+sudo systemctl list-timers merakitosnipeit.timer
 
 # Build Docker image
 docker build -t merakitosnipeit-cron:latest .
@@ -43,10 +66,20 @@ See `.env.example` for template.
 
 ## Code Structure
 
-**Minimal, flat codebase** (3 core files):
-- **main.py** (58 lines): Entry point, orchestration, field mapping
-- **meraki_api.py** (27 lines): Single function `device_details()` that initializes SDK and returns all devices
-- **snipe_it.py** (160 lines): Key functions for asset/model/category management with retry logic
+**Minimal, flat codebase** (3 core files + setup/deployment files):
+
+**Core Modules:**
+- **main.py** (~180 lines): Entry point, SyncStatistics class, orchestration, field mapping, device processing loop
+- **meraki_api.py** (~40 lines): Single function `device_details()` that initializes SDK and returns all devices
+- **snipe_it.py** (~340 lines): Functions for asset/model/category CRUD, caching, deduplication, retry logic with rate limiting
+
+**Setup & Deployment:**
+- **setup.sh** (~230 lines): Interactive setup script for development and production modes
+- **scheduler.py** (~170 lines): APScheduler wrapper for interval and cron-based scheduling
+- **merakitosnipeit.service**: Systemd service unit file (oneshot type)
+- **merakitosnipeit.timer**: Systemd timer for daily execution at 2:00 AM
+- **Makefile** (~50 lines): Convenient make targets for local development
+- **requirements.txt**: Python dependencies (meraki, requests, python-dotenv, APScheduler, pytest)
 
 ## Key Implementation Details
 
@@ -78,6 +111,16 @@ See `.env.example` for template.
 3. **Automatic entity creation**: Missing categories/models are created on-demand
 4. **Rate limit awareness**: Implements backoff with proper HTTP status handling
 
+## Recent Improvements (November 2025)
+
+- ✅ **Dual-mode setup script**: Development and production modes with automatic user/permission setup
+- ✅ **Automatic file copying**: Production setup copies code from repo to deployment directory
+- ✅ **Syncer user creation**: Setup automatically creates system user for secure systemd execution
+- ✅ **API call tracking**: Fixed statistics to accurately track create/update/search operations
+- ✅ **Systemd timer**: Daily execution at 2:00 AM with boot recovery (Persistent=true)
+- ✅ **Documentation**: QUICKSTART.md, enhanced README.md, and setup automation
+- ✅ **Error recovery**: Better error handling in setup and service execution
+
 ## Testing
 
 **Current state**: pytest installed but no tests exist. No test files or test configuration.
@@ -99,10 +142,22 @@ When adding tests, consider:
 
 ## Deployment
 
-**Docker** is the intended production deployment:
-- Runs cron daemon in foreground
-- Schedules `main.py` execution hourly via crontab
-- Logs to `/app/logs/cron.log` inside container
-- Uses `python:3.11-slim` base image
+### Production: Systemd (Recommended)
+- **Mode**: `./setup.sh` → choose production (2)
+- **Execution**: Daily at 2:00 AM via systemd timer
+- **User**: `syncer` (system user, auto-created by setup)
+- **Auto-start**: Enabled on boot, survives reboots
+- **Files**: `/opt/merakitosnipeit/` (or custom path)
+- **Service**: `/etc/systemd/system/merakitosnipeit.{service,timer}`
+- **Logs**: Via `journalctl -u merakitosnipeit.service`
 
-For local development, run `python main.py` directly after installing dependencies.
+### Development: Local Testing
+- **Mode**: `./setup.sh` → choose development (1)
+- **Execution**: Manual with `python main.py` or APScheduler
+- **Files**: Current directory with `./venv`
+- **Logs**: Console output and optional logging
+
+### Docker (Alternative)
+- Build: `docker build -t merakitosnipeit:latest .`
+- Run: `docker run --env-file .env merakitosnipeit:latest`
+- Logs: Container stderr/stdout

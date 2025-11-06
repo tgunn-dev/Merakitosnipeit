@@ -95,31 +95,33 @@ Choose setup mode (1 or 2): 2
 
 Enter deployment path (or press Enter for default `/opt/merakitosnipeit`).
 
-The script will:
+The script will automatically:
 - ✓ Create `/opt/merakitosnipeit` directory (with sudo if needed)
+- ✓ **Copy all project files** from current directory
 - ✓ Create virtual environment at `/opt/merakitosnipeit/venv`
-- ✓ Install all dependencies
-- ✓ Set up `.env` file
-- ✓ Fix permissions for systemd user (`syncer`)
+- ✓ **Create `syncer` system user** for secure execution
+- ✓ Install all dependencies in venv
+- ✓ Set up `.env` file in deployment directory
+- ✓ Fix permissions for systemd execution
+- ✓ Copy systemd service and timer files to `/etc/systemd/system/`
 
 ### Step 3: Configure Your Credentials
 
-Edit `.env` in your deployment directory:
+The script will prompt you to create `.env`. Edit it with your API keys:
 
 ```bash
 sudo nano /opt/merakitosnipeit/.env
 ```
 
-Add your API keys (same as development mode).
-
-### Step 4: Install Systemd Service
-
-```bash
-sudo cp merakitosnipeit.service /etc/systemd/system/
-sudo cp merakitosnipeit.timer /etc/systemd/system/
+Add:
+```env
+MERAKI_API_KEY=your-meraki-api-key-here
+ORGANIZATION_ID=your-org-id-here
+SNIPE_IT_API_KEY=your-snipeit-api-token-here
+SNIPE_IT_URL=https://snipeit.example.com
 ```
 
-### Step 5: Enable and Start Timer
+### Step 4: Enable and Start Systemd Timer
 
 ```bash
 sudo systemctl daemon-reload
@@ -127,20 +129,38 @@ sudo systemctl enable merakitosnipeit.timer
 sudo systemctl start merakitosnipeit.timer
 ```
 
-### Step 6: Verify It's Working
+### Step 5: Verify It's Working
 
+Check the timer is scheduled:
 ```bash
-# Check timer status
-sudo systemctl status merakitosnipeit.timer
-
-# List next scheduled run
 sudo systemctl list-timers merakitosnipeit.timer
-
-# View logs
-sudo journalctl -u merakitosnipeit.service -f
 ```
 
-The sync will run automatically **every day at 2 AM** and survive server reboots.
+Output should show next run at **02:00 (2 AM) daily**:
+```
+NEXT                        LEFT     LAST
+Fri 2025-11-07 02:00:00 CST 9h      (none)
+```
+
+Test it immediately:
+```bash
+sudo systemctl start merakitosnipeit.service
+```
+
+View logs:
+```bash
+sudo journalctl -u merakitosnipeit.service -n 20 --no-pager
+```
+
+You should see sync output like:
+```
+Starting Meraki to Snipe-IT sync...
+[1/63] Processing device: ...
+✓ Successful: 63
+Total API calls: ...
+```
+
+The sync will run automatically **every day at 2:00 AM** and survive server reboots.
 
 ---
 
