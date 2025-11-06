@@ -160,14 +160,39 @@ See `.env.example` for a template.
 
 ### Quick Start (Recommended)
 
-We provide automated setup scripts to handle virtual environment creation and dependency installation:
+We provide an automated setup script that handles both **development** and **production** deployments:
 
-**Option A: Using the setup script** (macOS/Linux/Git Bash)
 ```bash
 ./setup.sh
 ```
 
-**Option B: Using Make** (if you have `make` installed)
+The script will ask you to choose a setup mode:
+
+#### Mode 1: Development (Local Testing)
+- Creates virtual environment in current directory (`./venv`)
+- Perfect for testing and local development
+- Run manually with `python main.py` or use APScheduler for scheduling
+- **Next steps after setup:**
+  ```bash
+  source venv/bin/activate
+  python main.py
+  ```
+
+#### Mode 2: Production (Systemd/Server Deployment)
+- Creates virtual environment in `/opt/merakitosnipeit/venv` (or custom path)
+- Automatically sets up systemd service for daily execution
+- Survives server reboots
+- Handles sudo access automatically
+- **Next steps after setup:**
+  ```bash
+  sudo systemctl daemon-reload
+  sudo systemctl enable merakitosnipeit.timer
+  sudo systemctl start merakitosnipeit.timer
+  ```
+
+### Alternative Installation Methods
+
+**Option B: Using Make** (development only, if you have `make` installed)
 ```bash
 make setup
 make run
