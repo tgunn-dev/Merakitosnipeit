@@ -66,6 +66,19 @@ if [ "$SETUP_TYPE" == "production" ]; then
         echo -e "${GREEN}✓ Project files copied${NC}\n"
     fi
 
+    # Create syncer user for systemd service
+    if ! id syncer &>/dev/null; then
+        echo "Creating syncer system user..."
+        sudo useradd --system --home /nonexistent --shell /bin/false syncer 2>/dev/null
+        if [ $? -eq 0 ]; then
+            echo -e "${GREEN}✓ Syncer user created${NC}\n"
+        else
+            echo -e "${YELLOW}⚠ Could not create syncer user (may already exist)${NC}\n"
+        fi
+    else
+        echo -e "${GREEN}✓ Syncer user already exists${NC}\n"
+    fi
+
     # Check if we need sudo for venv creation
     if [ ! -w "$BASE_DIR" ]; then
         echo -e "${YELLOW}Note: Using sudo for venv creation (requires sudo access)${NC}\n"
