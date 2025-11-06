@@ -1,33 +1,35 @@
+# Use official Python runtime as base image (slim variant for smaller image size)
 FROM python:3.11-slim
 
-# Set workdir
+# Set working directory for all subsequent commands
 WORKDIR /app
 
-# Install cron
+# Install system dependencies (cron for scheduling)
+# Combined with cleanup to reduce layer size
 RUN apt-get update && \
-    apt-get install -y cron && \
-    apt-get clean
+    apt-get install -y --no-install-recommends cron && \
+    apt-get clean && \
+    rm -rf /var/lib/apt/lists/*
 
-# Copy your app
-COPY . /app
+# Copy only requirements first for better Docker layer caching
+# This way, dependencies are only reinstalled if requirements.txt changes
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
 
-# Create logs directory
+# Create logs directory for cron output
 RUN mkdir -p /app/logs
 
-# Add cron job
-RUN echo "0 * * * * /usr/local/bin/python /app/main.py >> /app/logs/cron.log 2>&1" > /etc/cron.d/merakitosnipeit
+# Copy application code
+COPY . /app
 
-# Set permissions
-RUN chmod 0644 /etc/cron.d/merakitosnipeit
+# Configure cron job to run sync script hourly
+# The cron job runs main.py every hour at minute 0 and logs output to cron.log
+RUN echo "0 * * * * /usr/local/bin/python /app/main.py >> /app/logs/cron.log 2>&1" > /etc/cron.d/merakitosnipeit && \
+    chmod 0644 /etc/cron.d/merakitosnipeit && \
+    crontab /etc/cron.d/merakitosnipeit && \
+    touch /app/logs/cron.log
 
-# Apply cron job
-RUN crontab /etc/cron.d/merakitosnipeit
-
-# Ensure the cron logs work
-RUN touch /app/logs/cron.log
-COPY requirements.txt .
-RUN pip install -r requirements.txt
-
-# Run cron in the foreground
+# Run cron daemon in foreground (required for Docker containers)
+# This keeps the container running and executes cron jobs as scheduled
 CMD ["cron", "-f"]
 
